@@ -1,0 +1,25 @@
+model:
+  vocab_size: 50257          # Vocabulary size for token embedding
+  embed_dim: 768             # Embedding dimension for tokens
+  max_seq_len: 1024          # Maximum sequence length for position embeddings
+  num_layers: 12             # Number of transformer blocks
+  ff_dim: 3072               # Hidden layer size in feedforward layer
+  num_heads: 12              # Number of attention heads
+  attn_dropout: 0.1          # Dropout rate for attention layers
+  resid_dropout: 0.1         # Dropout rate for residual connections
+  embed_dropout: 0.1         # Dropout for embedding layers
+  initializer_range: 0.02    # Initialization range for embeddings
+  layer_norm_epsilon: 1e-5   # Epsilon for layer normalization
+  output_attentions: false   # Return attention weights
+  output_hidden_states: false # Return hidden states
+
+training:
+  batch_size: 32             # Batch size for training
+  learning_rate: 3e-5        # Learning rate
+  weight_decay: 0.1          # Weight decay for optimizer
+  max_steps: 1000000         # Maximum training steps
+  warmup_steps: 10000        # Warmup steps for learning rate scheduling
+  optimizer: "AdamW"         # Optimizer type
+  beta1: 0.9                 # Beta1 for Adam optimizer
+  beta2: 0.999               # Beta2 for Adam optimizer
+  epsilon: 1e-8              # Epsilon for optimizer
