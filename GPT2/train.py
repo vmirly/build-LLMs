@@ -49,7 +49,8 @@ def main(args):
 
     optimizer = optim.AdamW(
         model.parameters(), lr=config.training.learning_rate,
-        betas=(0.9, 0.95), eps=1e-8, weight_decay=0.1
+        betas=(0.9, 0.95), eps=1e-8, weight_decay=0.1,
+        fused=True
     )
 
     batch_x, batch_y = data_loader.next_batch()
@@ -63,24 +64,34 @@ def main(args):
     )
     logger.info(f"Loss: {loss.item()}")
 
-    for epoch in range(10):
+    micro_batch_size = config.training.batch_size
+    max_seq_len = config.model.max_seq_len
+    total_batch_tokens = config.training.total_batch_tokens
+    max_steps = int(1e10 // total_batch_tokens)
+    grad_accum_steps = total_batch_tokens // (micro_batch_size * max_seq_len)
+    logger.info(f"Max steps: {max_steps} Grad accum steps: {grad_accum_steps}")
+
+    for step in range(max_steps):
         t_start = time.time()
-        batch_x, batch_y = data_loader.next_batch()
-        batch_x = batch_x.to(device)
-        batch_y = batch_y.to(device)
+
         optimizer.zero_grad()
-        logits = model(batch_x)
-        loss = F.cross_entropy(
-            logits.view(-1, logits.size(-1)), batch_y.view(-1)
-        )
-        loss.backward()
+
+        for micro_step in range(grad_accum_steps):
+            batch_x, batch_y = data_loader.next_batch()
+            batch_x = batch_x.to(device)
+            batch_y = batch_y.to(device)
+            logits = model(batch_x)
+            loss = F.cross_entropy(
+                logits.view(-1, logits.size(-1)), batch_y.view(-1)
+            )
+            loss = loss / grad_accum_steps
+            loss.backward()
         optimizer.step()
         torch.cuda.synchronize()
         t_end = time.time()
-        tokens_per_sec = (batch_x.size(0) * batch_x.size(1)) / (t_end - t_start)
-        logger.info(f"Epoch {epoch} Loss: {loss.item()} Tokens/s: {tokens_per_sec}")
-
-
+        #tokens_per_sec = batch_size * max_seq_len * grad_accum_steps / (t_end - t_start)
+        tokens_per_sec = batch_x.size(0) * batch_x.size(1) * grad_accum_steps / (t_end - t_start)
+        print(f"Step {step} Loss: {loss.item():.4f} Tokens/s: {tokens_per_sec}")
 
 
 if __name__ == '__main__':

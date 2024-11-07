@@ -16,6 +16,7 @@ class ModelConfig(BaseModel):
 
 class Training(BaseModel):
     batch_size: int = 4
+    total_batch_tokens: int = 4 * 1024
     seq_length: int = 1024
     epochs: int = 10
     learning_rate: float = 1e-4
