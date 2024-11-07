@@ -28,16 +28,18 @@ def parser(argv):
     return args
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+torch.set_float32_matmul_precision('high')  # 16k -> 19.5k
 
 def main(args):
     config = yaml.load(open(args.config_path, 'r'), Loader=yaml.FullLoader)
     config = GPT2Config(**config)
     logger.info(config)
-
+    
     model = GPT2(config.model)
     n_params = count_parameters(model)
     logger.info(f"Number of parameters: {n_params}")
     model.to(device)
+    model = torch.compile(model)  # 19.5k -> 25k
 
     data_loader = TextDataset(
         data_dir=args.data_dir,
@@ -60,8 +62,12 @@ def main(args):
         logits.view(-1, logits.size(-1)), batch_y.view(-1)
     )
     logger.info(f"Loss: {loss.item()}")
-    for epoch in range(100):
+
+    for epoch in range(10):
         t_start = time.time()
+        batch_x, batch_y = data_loader.next_batch()
+        batch_x = batch_x.to(device)
+        batch_y = batch_y.to(device)
         optimizer.zero_grad()
         logits = model(batch_x)
         loss = F.cross_entropy(
