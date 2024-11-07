@@ -150,6 +150,7 @@ class GPT2(nn.Module):
 
         self.ln_final = nn.LayerNorm(embed_dim)
         self.head = nn.Linear(embed_dim, vocab_size, bias=False)
+        self.head.weight = self.token_emb.weight
 
     def forward(self, idx):
         # Generate token embeddings

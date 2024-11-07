@@ -47,7 +47,7 @@ def load_hf_weights(model, hf_model):
     model.ln_final.weight.data.copy_(hf_dict['ln_f.weight'])
     model.ln_final.bias.data.copy_(hf_dict['ln_f.bias'])
     # assign head weights (wte)
-    model.head.weight.data.copy_(hf_dict['wte.weight'])
+    #model.head.weight.data.copy_(hf_dict['wte.weight'])
 
 
 def generate_text(
@@ -70,3 +70,7 @@ def generate_text(
             generated = torch.cat((generated, next_token), dim=1)
 
     return tokenizer.decode(generated[0].tolist())
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
