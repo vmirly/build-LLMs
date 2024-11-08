@@ -12,6 +12,7 @@ class CausalSelfAttention(nn.Module):
         super().__init__()
         self.num_heads = cfg.num_heads
         self.combined_proj = cfg.combined_proj
+        self.flash_attention = cfg.flash_attention
         if not self.combined_proj:
             self.q_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
             self.k_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
@@ -22,23 +23,24 @@ class CausalSelfAttention(nn.Module):
 
         self.out_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
 
-        self.attn_p_drop = cfg.p_drop_attn
-        #self.attn_dropout = nn.Dropout(0.1)
         self.resid_dropout = nn.Dropout(0.1)
-
-        # Create a bias tensor to prevent attention to future tokens
-        #mask = torch.tril(torch.ones(cfg.max_seq_len, cfg.max_seq_len))
-        #self.register_buffer(
-        #    'mask', (mask == 0).view(1, 1, cfg.max_seq_len, cfg.max_seq_len)
-        #)
-        # mask will be a tensor like the following:
-        # tensor([[[[False, True,  True,  ...,  True],
-        #           [False, False, True,  ...,  True],
-        #           [False, False, False, ...,  True],
-        #           ...,
-        #           [False, False, False, ..., False]]]])
-        # where True values indicate that the token should be masked
-        # i.e., replaced with -inf in the attention scores
+        if self.flash_attention:
+            self.p_drop_attn = cfg.p_drop_attn
+        else:
+            self.attn_dropout = nn.Dropout(0.1)
+            # Create a bias tensor to prevent attention to future tokens
+            mask = torch.tril(torch.ones(cfg.max_seq_len, cfg.max_seq_len))
+            self.register_buffer(
+                'mask', (mask == 0).view(1, 1, cfg.max_seq_len, cfg.max_seq_len)
+            )
+            # mask will be a tensor like the following:
+            # tensor([[[[False, True,  True,  ...,  True],
+            #           [False, False, True,  ...,  True],
+            #           [False, False, False, ...,  True],
+            #           ...,
+            #           [False, False, False, ..., False]]]])
+            # where True values indicate that the token should be masked
+            # i.e., replaced with -inf in the attention scores
         
     def forward(self, x):
         # Apply linear transformations to get queries, keys, and values
@@ -59,28 +61,29 @@ class CausalSelfAttention(nn.Module):
         v = v.view(B, T, self.num_heads, C // self.num_heads).permute(0, 2, 1, 3)
         # q,k,v: [B, nh, T, C//nh]
         
-        # Calculate attention scores
-        #scores = torch.matmul(q, k.permute(0, 1, 3, 2))
-        #scores = scores / (math.sqrt(k.size(-1)))
-        #scores.masked_fill_(self.mask[:, :, :T, :T], -torch.inf)
-        # scores: [B, nh, T, T]
-        
-        # Apply softmax to get attention weights
-        #attn_weights = F.softmax(scores, dim=-1)
-        # attn_weights: [B, nh, T, T]
-        #attn_weights = self.attn_dropout(attn_weights)
-        # Multiply attention weights with values
-        #out = torch.matmul(attn_weights, v)
-        # out: [B, nh, T, C//nh]
+        if self.flash_attention:
+            # Flash Attention
+            out = F.scaled_dot_product_attention(
+                q, k, v, is_causal=True,
+                dropout_p=self.p_drop_attn
+            )
+        else:
+            # Calculate attention scores
+            scores = torch.matmul(q, k.permute(0, 1, 3, 2))
+            scores = scores / (math.sqrt(k.size(-1)))
+            scores.masked_fill_(self.mask[:, :, :T, :T], -torch.inf)
+            # scores: [B, nh, T, T]
+            
+            # Apply softmax to get attention weights
+            attn_weights = F.softmax(scores, dim=-1)
+            # attn_weights: [B, nh, T, T]
+            attn_weights = self.attn_dropout(attn_weights)
+            # Multiply attention weights with values
+            out = torch.matmul(attn_weights, v)
+            # [B, nh, T, C//nh]
 
-        # Flash Attention
-        out = F.scaled_dot_product_attention(
-            q, k, v, is_causal=True,
-            dropout_p=self.attn_p_drop
-        )
 
         # Concatenate the heads and apply a linear transformation
-        #out = out.permute(0, 2, 1, 3).contiguous().view(B, T, C)
         out = out.transpose(1, 2).contiguous().view(B, T, C)
         out = self.out_proj(out)
         # out: [B, T, C]
@@ -141,12 +144,14 @@ class GPT2(nn.Module):
         super().__init__()
         embed_dim = config.embed_dim
         vocab_size = config.vocab_size
+        if vocab_size % 64 != 0:
+            vocab_size += 64 - (vocab_size % 64)
         context_length = config.max_seq_len
         self.num_layers = config.num_layers
 
         self.token_emb = nn.Embedding(vocab_size, embed_dim)
         self.pos_emb = nn.Embedding(context_length, embed_dim)
-        self.embed_dropout = nn.Dropout(config.embed_dropout)
+        self.embed_dropout = nn.Dropout(config.p_drop_embed)
 
         self.layers = nn.ModuleList([
             TransformerBlock(config) for _ in range(self.num_layers)

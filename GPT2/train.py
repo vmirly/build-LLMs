@@ -53,16 +53,16 @@ def main(args):
         fused=True
     )
 
-    batch_x, batch_y = data_loader.next_batch()
-    batch_x = batch_x.to(device)
-    batch_y = batch_y.to(device)
-    logger.info(f"{batch_x.size()} {batch_y.size()}")
-    logits = model(batch_x)
-    logger.info(f"{logits.size()}")
-    loss = F.cross_entropy(
-        logits.view(-1, logits.size(-1)), batch_y.view(-1)
-    )
-    logger.info(f"Loss: {loss.item()}")
+    #batch_x, batch_y = data_loader.next_batch()
+    #batch_x = batch_x.to(device)
+    #batch_y = batch_y.to(device)
+    #logger.info(f"{batch_x.size()} {batch_y.size()}")
+    #logits = model(batch_x)
+    #logger.info(f"{logits.size()}")
+    #loss = F.cross_entropy(
+    #    logits.view(-1, logits.size(-1)), batch_y.view(-1)
+    #)
+    #logger.info(f"Loss: {loss.item()}")
 
     micro_batch_size = config.training.batch_size
     max_seq_len = config.model.max_seq_len
@@ -75,23 +75,27 @@ def main(args):
         t_start = time.time()
 
         optimizer.zero_grad()
-
+        loss_train = 0.0
         for micro_step in range(grad_accum_steps):
             batch_x, batch_y = data_loader.next_batch()
             batch_x = batch_x.to(device)
             batch_y = batch_y.to(device)
-            logits = model(batch_x)
-            loss = F.cross_entropy(
-                logits.view(-1, logits.size(-1)), batch_y.view(-1)
-            )
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                logits = model(batch_x)
+                loss = F.cross_entropy(
+                    logits.view(-1, logits.size(-1)), batch_y.view(-1)
+                )
             loss = loss / grad_accum_steps
+            loss_train += loss.item()
             loss.backward()
         optimizer.step()
         torch.cuda.synchronize()
         t_end = time.time()
         #tokens_per_sec = batch_size * max_seq_len * grad_accum_steps / (t_end - t_start)
         tokens_per_sec = batch_x.size(0) * batch_x.size(1) * grad_accum_steps / (t_end - t_start)
-        print(f"Step {step} Loss: {loss.item():.4f} Tokens/s: {tokens_per_sec}")
+        print(f"Step {step} Loss: {loss_train:.4f} Tokens/s: {tokens_per_sec}")
+        if step > 10:
+            break
 
 
 if __name__ == '__main__':

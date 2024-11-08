@@ -3,6 +3,8 @@ from pydantic import BaseModel
 
 
 class ModelConfig(BaseModel):
+    combined_proj: bool = True
+    flash_attention: bool = False
     hf_model_name: str = ""
     vocab_size: int = 50257
     max_seq_len: int = 1024

@@ -1,4 +1,6 @@
 model:
+  combined_proj: true  # Whether to combine token and position embeddings
+  flash_attention: true  # Whether to use Flash attention
   max_seq_len: 1024  # Maximum sequence length for position embeddings
   vocab_size: 50257  # Vocabulary size for token embedding
   embed_dim: 768     # Embedding dimension for tokens
@@ -10,7 +12,7 @@ model:
   p_drop_resid: 0.1  # Dropout probability for residual connections
 
 training:
-  batch_size: 4        # Batch size for training
+  batch_size: 16       # Batch size for training
   total_batch_tokens: 524288
   learning_rate: 6e-4  # Learning rate
   max_steps: 19073     # Maximum training steps
