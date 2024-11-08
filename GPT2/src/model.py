@@ -11,19 +11,26 @@ class CausalSelfAttention(nn.Module):
     def __init__(self, cfg):
         super().__init__()
         self.num_heads = cfg.num_heads
-        self.q_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
-        self.k_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
-        self.v_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
+        self.combined_proj = cfg.combined_proj
+        if not self.combined_proj:
+            self.q_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
+            self.k_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
+            self.v_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
+        else:
+            # more efficient way:
+            self.c_attn = nn.Linear(cfg.embed_dim, cfg.embed_dim * 3)
+
         self.out_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
 
-        self.attn_dropout = nn.Dropout(0.1)
+        self.attn_p_drop = cfg.p_drop_attn
+        #self.attn_dropout = nn.Dropout(0.1)
         self.resid_dropout = nn.Dropout(0.1)
-        
+
         # Create a bias tensor to prevent attention to future tokens
-        mask = torch.tril(torch.ones(cfg.max_seq_len, cfg.max_seq_len))
-        self.register_buffer(
-            'mask', (mask == 0).view(1, 1, cfg.max_seq_len, cfg.max_seq_len)
-        )
+        #mask = torch.tril(torch.ones(cfg.max_seq_len, cfg.max_seq_len))
+        #self.register_buffer(
+        #    'mask', (mask == 0).view(1, 1, cfg.max_seq_len, cfg.max_seq_len)
+        #)
         # mask will be a tensor like the following:
         # tensor([[[[False, True,  True,  ...,  True],
         #           [False, False, True,  ...,  True],
@@ -36,9 +43,13 @@ class CausalSelfAttention(nn.Module):
     def forward(self, x):
         # Apply linear transformations to get queries, keys, and values
         # x: [B, T, C]
-        q = self.q_proj(x)
-        k = self.k_proj(x)
-        v = self.v_proj(x)
+        if not self.combined_proj:
+            q = self.q_proj(x)
+            k = self.k_proj(x)
+            v = self.v_proj(x)
+        else:
+            qkv = self.c_attn(x)
+            q, k, v = torch.chunk(qkv, 3, dim=-1)
         # q,k,v: [B, T, C]
 
         # Split the queries, keys, and values into multiple heads
@@ -49,28 +60,31 @@ class CausalSelfAttention(nn.Module):
         # q,k,v: [B, nh, T, C//nh]
         
         # Calculate attention scores
-        scores = torch.matmul(q, k.permute(0, 1, 3, 2))
-        scores = scores / (math.sqrt(k.size(-1)))
-        scores.masked_fill_(self.mask[:, :, :T, :T], -torch.inf)
+        #scores = torch.matmul(q, k.permute(0, 1, 3, 2))
+        #scores = scores / (math.sqrt(k.size(-1)))
+        #scores.masked_fill_(self.mask[:, :, :T, :T], -torch.inf)
         # scores: [B, nh, T, T]
         
         # Apply softmax to get attention weights
-        attn_weights = F.softmax(scores, dim=-1)
+        #attn_weights = F.softmax(scores, dim=-1)
         # attn_weights: [B, nh, T, T]
-
-        attn_weights = self.attn_dropout(attn_weights)
-        
+        #attn_weights = self.attn_dropout(attn_weights)
         # Multiply attention weights with values
-        out = torch.matmul(attn_weights, v)
+        #out = torch.matmul(attn_weights, v)
         # out: [B, nh, T, C//nh]
 
+        # Flash Attention
+        out = F.scaled_dot_product_attention(
+            q, k, v, is_causal=True,
+            dropout_p=self.attn_p_drop
+        )
+
         # Concatenate the heads and apply a linear transformation
-        out = out.permute(0, 2, 1, 3).contiguous().view(B, T, C)
+        #out = out.permute(0, 2, 1, 3).contiguous().view(B, T, C)
+        out = out.transpose(1, 2).contiguous().view(B, T, C)
         out = self.out_proj(out)
         # out: [B, T, C]
-
         out = self.resid_dropout(out)
-        
         return out
 
 
@@ -83,15 +97,14 @@ class FeedForwardNetwork(nn.Module):
 
         embed_dim = cfg.embed_dim
         hidden_dim = cfg.embed_dim * 4
-        p_drop = cfg.resid_dropout
         # Two linear layers with activation in between
         self.fc1 = nn.Linear(embed_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, embed_dim)
         self.gelu = nn.GELU(approximate='tanh')
-        self.resid_dropout = nn.Dropout(p_drop)
+        self.resid_dropout = nn.Dropout(cfg.p_drop_resid)
 
     def forward(self, x):            # [B, T, C]
-        x = self.gelu(self.fc1(x))  # [B, T, 2C]
+        x = self.gelu(self.fc1(x))   # [B, T, 2C]
         x = self.fc2(x)              # [B, T, C]
         x = self.resid_dropout(x)
 
@@ -104,27 +117,18 @@ class TransformerBlock(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-        self.mha = CausalSelfAttention(config)
         self.ln1 = nn.LayerNorm(config.embed_dim)
-        self.ffn = FeedForwardNetwork(config)
+        self.mha = CausalSelfAttention(config)
         self.ln2 = nn.LayerNorm(config.embed_dim)
+        self.ffn = FeedForwardNetwork(config)
 
-        self.resid_dropout = nn.Dropout(config.resid_dropout)
+        #self.resid_dropout = nn.Dropout(config.resid_dropout)
 
     def forward(self, x):
         # Apply self-attention and add residual connection
-        shortcut = x
-        x = self.ln1(x)
-        x = self.mha(x)[0]
-        x = self.resid_dropout(x)
-        x = shortcut + x
-
+        x = x + self.mha(self.ln1(x))
         # Apply feedforward network and add residual connection
-        shortcut = x
-        x = self.ln2(x)
-        x = self.ffn(x)
-        x = self.resid_dropout(x)
-        x = shortcut + x
+        x = x + self.ffn(self.ln2(x))
 
         return x
 
@@ -168,7 +172,7 @@ class GPT2(nn.Module):
         # Generate token embeddings
         tok_emb = self.token_emb(idx)
         # Generate position embeddings
-        pos = torch.arange(idx.size(1), device=idx.device).unsqueeze(0)
+        pos = torch.arange(idx.size(1), dtype=torch.long, device=idx.device).unsqueeze(0)
         pos_emb = self.pos_emb(pos)
         x = self.embed_dropout(tok_emb + pos_emb)
 

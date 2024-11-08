@@ -9,9 +9,9 @@ class ModelConfig(BaseModel):
     embed_dim: int = 768
     num_heads: int = 12
     num_layers: int = 12
-    attn_dropout: float = 0.1
-    resid_dropout: float = 0.1
-    embed_dropout: float = 0.1
+    p_drop_attn: float = 0.1
+    p_drop_resid: float = 0.1
+    p_drop_embed: float = 0.1
 
 
 class Training(BaseModel):

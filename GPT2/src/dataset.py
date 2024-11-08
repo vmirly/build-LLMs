@@ -41,7 +41,7 @@ class TextDataset():
         total = self.batch_size * self.seq_length
         x = self.shard[idx: idx + total]
         y = self.shard[idx + 1: idx + total + 1]
-        self.current_index += self.batch_size*self.seq_length
+        self.current_index += total
 
         x = x.view(self.batch_size, self.seq_length)
         y = y.view(self.batch_size, self.seq_length)

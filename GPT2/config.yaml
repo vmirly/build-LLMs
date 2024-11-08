@@ -4,6 +4,10 @@ model:
   embed_dim: 768     # Embedding dimension for tokens
   num_layers: 12     # Number of transformer blocks
   num_heads: 12      # Number of attention heads
+  p_drop_hidden: 0.1 # Dropout probability for hidden states
+  p_drop_attn: 0.1   # Dropout probability for attention weights
+  p_drop_embed: 0.1  # Dropout probability for token embeddings
+  p_drop_resid: 0.1  # Dropout probability for residual connections
 
 training:
   batch_size: 4        # Batch size for training
