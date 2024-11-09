@@ -19,3 +19,5 @@ Build a GPT2 from Scratch
 | Gradient Accumulation      | 69163.8     |
 
 
+![Performance Optimization](../assets/optimization.png)
+
