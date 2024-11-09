@@ -1,5 +1,5 @@
 # Description: Utility functions for GPT2 model
-
+import math
 import torch
 
 
@@ -74,3 +74,32 @@ def generate_text(
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+class CosineLRScheduler():
+    def __init__(
+        self,
+        optimizer,
+        max_lr,
+        min_lr,
+        warmup_steps,
+        total_steps
+    ):
+        self.optimizer = optimizer
+        self.max_lr = max_lr
+        self.min_lr = min_lr
+        self.warmup_steps = warmup_steps
+        self.total_steps = total_steps
+    
+    def get_lr(self, step):
+        if step < self.warmup_steps:
+            return self.max_lr * (step + 1) / self.warmup_steps
+        else:
+            x = (step - self.warmup_steps) / (self.total_steps - self.warmup_steps)
+            alpha = 0.5 * (1.0 + math.cos(math.pi * x))
+            return self.min_lr + alpha * (self.max_lr - self.min_lr)
+        
+    def update_lr(self, step):
+        lr = self.get_lr(step)
+        for param_group in self.optimizer.param_groups:
+            param_group['lr'] = lr
