@@ -71,6 +71,10 @@ def main(args):
     grad_accum_steps = total_batch_tokens // (micro_batch_size * max_seq_len)
     logger.info(f"Max steps: {max_steps} Grad accum steps: {grad_accum_steps}")
 
+    os.makedirs(args.output_dir, exist_ok=True)
+    with open(os.path.join(args.output_dir, "log.txt"), "w") as f:
+        pass
+
     for step in range(max_steps):
         t_start = time.time()
 
@@ -94,8 +98,20 @@ def main(args):
         #tokens_per_sec = batch_size * max_seq_len * grad_accum_steps / (t_end - t_start)
         tokens_per_sec = batch_x.size(0) * batch_x.size(1) * grad_accum_steps / (t_end - t_start)
         print(f"Step {step} Loss: {loss_train:.4f} Tokens/s: {tokens_per_sec}")
-        if step > 10:
-            break
+
+        if (step + 1) % 1000 == 0 or (step + 1) == max_steps:
+            # save checkpoint
+            chekpoint_dict = {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "step": step,
+            }
+            checkpoint_path = os.path.join(args.output_dir, f"checkpoint-{step}.pt")
+            torch.save(chekpoint_dict, checkpoint_path)
+            logger.info(f"Saved checkpoint at {checkpoint_path}")
+
+        with open(os.path.join(args.output_dir, "log.txt"), "a") as f:
+            f.write(f"{step + 1} {loss_train:.4f}\n")
 
 
 if __name__ == '__main__':
