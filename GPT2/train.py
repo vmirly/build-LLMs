@@ -125,6 +125,8 @@ def main(args):
             batch_x, batch_y = data_loader.next_batch()
             batch_x = batch_x.to(device)
             batch_y = batch_y.to(device)
+            if use_ddp:
+                model.require_backward_grad_sync = (micro_step + 1 == grad_accum_steps)
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 logits = model(batch_x)
                 loss = F.cross_entropy(
@@ -133,8 +135,12 @@ def main(args):
             loss = loss / grad_accum_steps
             loss_train += loss.item()
             loss.backward()
+        if use_ddp:
+            # take average of loss across all GPUs
+            dist.all_reduce(loss_train, op=dist.ReduceOp.AVG)
         optimizer.step()
-        torch.cuda.synchronize()
+        if device.type == "cuda":
+            torch.cuda.synchronize()
         t_end = time.time()
         #tokens_per_sec = batch_size * max_seq_len * grad_accum_steps / (t_end - t_start)
         tokens_per_sec = batch_x.size(0) * batch_x.size(1) * grad_accum_steps / (t_end - t_start)
