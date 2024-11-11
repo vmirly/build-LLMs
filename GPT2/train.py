@@ -7,6 +7,12 @@ import time
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
+
+# ddp:
+from torch.distributed import init_process_group, destroy_process_group
+from torch.nn.parallel import DistributedDataParallel
+import torch.distributed as dist
+
 from loguru import logger
 
 from src.model import GPT2
@@ -30,16 +36,49 @@ def parser(argv):
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 torch.set_float32_matmul_precision('high')  # 16k -> 19.5k
 
+# for ddp, use torchrun:
+# torchrun --nproc_per_node=4 train.py
+def setup_ddp():
+    if "LOCAL_RANK" in os.environ:
+        use_ddp = True
+        # initialize the process group
+        torch.cuda.set_device(int(os.environ["LOCAL_RANK"]))
+        dist.init_process_group("nccl")
+        rank = dist.get_rank()
+        world_size = dist.get_world_size()
+    else:
+        use_ddp = False
+        rank = 0
+        world_size = 1
+    master_process = rank == 0
+    return use_ddp, rank, world_size, master_process
+
+
+def cleanup():
+    dist.destroy_process_group()
+
+
 def main(args):
+    use_ddp, rank, world_size, master_process = setup_ddp()
+
     config = yaml.load(open(args.config_path, 'r'), Loader=yaml.FullLoader)
     config = GPT2Config(**config)
-    logger.info(config)
+    if master_process:
+        logger.info(config)
     
     model = GPT2(config.model)
-    n_params = count_parameters(model)
-    logger.info(f"Number of parameters: {n_params}")
+    if master_process:
+        n_params = count_parameters(model)
+        logger.info(f"Number of parameters: {n_params}")
     model.to(device)
     model = torch.compile(model)  # 19.5k -> 25k
+    if use_ddp:
+        model = DistributedDataParallel(
+            model, device_ids=[rank], output_device=rank
+        )
+        raw_model = model.module
+    else:
+        raw_model = model
 
     data_loader = TextDataset(
         data_dir=args.data_dir,
@@ -64,12 +103,14 @@ def main(args):
     #)
     #logger.info(f"Loss: {loss.item()}")
 
-    micro_batch_size = config.training.batch_size
-    max_seq_len = config.model.max_seq_len
+    B = config.training.batch_size
+    T = config.model.max_seq_len
     total_batch_tokens = config.training.total_batch_tokens
     max_steps = int(1e10 // total_batch_tokens)
-    grad_accum_steps = total_batch_tokens // (micro_batch_size * max_seq_len)
-    logger.info(f"Max steps: {max_steps} Grad accum steps: {grad_accum_steps}")
+    grad_accum_steps = total_batch_tokens // (B * T)
+    logger.info(
+        f"Max steps: {max_steps} Grad accum steps: {grad_accum_steps}"
+    )
 
     os.makedirs(args.output_dir, exist_ok=True)
     with open(os.path.join(args.output_dir, "log.txt"), "w") as f:
@@ -97,7 +138,7 @@ def main(args):
         t_end = time.time()
         #tokens_per_sec = batch_size * max_seq_len * grad_accum_steps / (t_end - t_start)
         tokens_per_sec = batch_x.size(0) * batch_x.size(1) * grad_accum_steps / (t_end - t_start)
-        print(f"Step {step} Loss: {loss_train:.4f} Tokens/s: {tokens_per_sec}")
+        print(f"Step {step} Loss: {loss_train:.4f} Tokens/s: {tokens_per_sec:.0f}")
 
         if (step + 1) % 1000 == 0 or (step + 1) == max_steps:
             # save checkpoint
