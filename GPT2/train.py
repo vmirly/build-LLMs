@@ -16,9 +16,10 @@ import torch.distributed as dist
 from loguru import logger
 
 from src.model import GPT2
-from src.utils import count_parameters
 from src.configs import GPT2Config
 from src.dataset import TextDataset
+from src.utils import count_parameters
+from src.utils import CosineLRScheduler
 
 
 def parser(argv):
@@ -87,9 +88,13 @@ def main(args):
     )
 
     optimizer = optim.AdamW(
-        model.parameters(), lr=config.training.learning_rate,
+        model.parameters(), lr=config.training.max_lr,
         betas=(0.9, 0.95), eps=1e-8, weight_decay=0.1,
         fused=True
+    )
+    scheduler = CosineLRScheduler(
+        optimizer, config.training.max_lr, config.training.min_lr,
+        config.training.warmup_steps, config.training.max_steps
     )
 
     #batch_x, batch_y = data_loader.next_batch()
@@ -138,6 +143,9 @@ def main(args):
         if use_ddp:
             # take average of loss across all GPUs
             dist.all_reduce(loss_train, op=dist.ReduceOp.AVG)
+
+        # update the learning rate
+        scheduler.update_lr(step=step)
         optimizer.step()
         if device.type == "cuda":
             torch.cuda.synchronize()

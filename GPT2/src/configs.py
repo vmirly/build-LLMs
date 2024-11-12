@@ -21,7 +21,9 @@ class Training(BaseModel):
     total_batch_tokens: int = 4 * 1024
     seq_length: int = 1024
     epochs: int = 10
-    learning_rate: float = 1e-4
+    max_lr: float = 6e-4
+    min_lr: float = 6e-5
+    max_steps: int = 10000
     warmup_steps: int = 1000
     gradient_accumulation_steps: int = 1
     max_norm: float = 1.0

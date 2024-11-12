@@ -12,9 +12,13 @@ model:
   p_drop_resid: 0.1  # Dropout probability for residual connections
 
 training:
+  dataset:
+    train_dir: "data"
+    val_dir: "data"
   batch_size: 16       # Batch size for training
   total_batch_tokens: 524288
-  learning_rate: 6e-4  # Learning rate
+  max_lr: 6e-4         # Learning rate
+  min_lr: 6e-5         # Minimum learning rate
   max_steps: 19073     # Maximum training steps
   warmup_steps: 100    # Warmup steps for learning rate scheduling
   optimizer: "AdamW"   # Optimizer type
