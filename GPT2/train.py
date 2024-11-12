@@ -145,14 +145,14 @@ def main(args):
             dist.all_reduce(loss_train, op=dist.ReduceOp.AVG)
 
         # update the learning rate
-        scheduler.update_lr(step=step)
+        lr = scheduler.update_lr(step=step)
         optimizer.step()
         if device.type == "cuda":
             torch.cuda.synchronize()
         t_end = time.time()
         #tokens_per_sec = batch_size * max_seq_len * grad_accum_steps / (t_end - t_start)
         tokens_per_sec = batch_x.size(0) * batch_x.size(1) * grad_accum_steps / (t_end - t_start)
-        print(f"Step {step} Loss: {loss_train:.4f} Tokens/s: {tokens_per_sec:.0f}")
+        print(f"Step {step} Loss: {loss_train:.4f}  {lr=:.5f} Tokens/s: {tokens_per_sec:.0f}")
 
         if (step + 1) % 1000 == 0 or (step + 1) == max_steps:
             # save checkpoint
