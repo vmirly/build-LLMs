@@ -78,3 +78,50 @@ class MLP(nn.Module):
         x = self.fc2(x)
         x = self.resid_dropout(x)
         return x
+    
+# signature from HF:
+# ViTLayer(
+#  (attention): ViTSdpaSelfAttention(...)
+#  (intermediate): ViTIntermediate(...)
+#  (output): ViTOutput(...)
+#  (layernorm_before): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+#  (layernorm_after): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+#)
+class ViTLayer(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+
+        self.attn = MSA(cfg)
+        self.ffn = MLP(cfg)
+        self.norm1 = nn.LayerNorm(cfg.embed_dim)
+        self.norm2 = nn.LayerNorm(cfg.embed_dim)
+
+    def forward(self, x):
+        x = x + self.attn(self.norm1(x))
+        x = x + self.ffn(self.norm2(x))
+        return x
+    
+# signature from HF:
+# ViTEncoder(
+#  (layer): ModuleList(
+#    (0-11): ViTLayer(
+#      (attention): ViTSdpaSelfAttention(...)
+#      (intermediate): ViTIntermediate(...)
+#      (output): ViTOutput(...)
+#      (layernorm_before): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+#      (layernorm_after): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+#    )
+#  )
+#)
+class ViTEncoder(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+
+        self.layers = nn.ModuleList([
+            ViTLayer(cfg) for _ in range(cfg.num_layers)
+        ])
+
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        return x
