@@ -15,7 +15,7 @@ from torch.nn import functional as F
 #  (dropout): Dropout(p=0.0, inplace=False)
 #)
 
-class MultiheadAttention(nn.Module):
+class MSA(nn.Module):
     def __init__(self, cfg):
         super().__init__()
 
@@ -23,7 +23,6 @@ class MultiheadAttention(nn.Module):
         self.p_drop = cfg.p_drop
         self.scale = cfg.embed_dim ** -0.5
 
-        self.norm = nn.LayerNorm(cfg.embed_dim)
         self.resid_dropout = nn.Dropout(cfg.p_drop)
         self.c_attn = nn.Linear(cfg.embed_dim, cfg.embed_dim * 3)
         self.out_proj = nn.Linear(cfg.embed_dim, cfg.embed_dim)
@@ -53,3 +52,29 @@ class MultiheadAttention(nn.Module):
         # out: [B, T, C]
         out = self.resid_dropout(out)
         return out
+
+
+# signature from HF:
+# ViTIntermediate(
+#  (dense): Linear(in_features=768, out_features=3072, bias=True)
+#  (intermediate_act_fn): GELUActivation()
+#)
+# ViTOutput(
+#  (dense): Linear(in_features=3072, out_features=768, bias=True)
+#  (dropout): Dropout(p=0.0, inplace=False)
+#)
+class MLP(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+
+        self.fc1 = nn.Linear(cfg.embed_dim, cfg.embed_dim * 4)
+        self.act = nn.GELU()
+        self.fc2 = nn.Linear(cfg.embed_dim * 4, cfg.embed_dim)
+        self.resid_dropout = nn.Dropout(cfg.p_drop)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.act(x)
+        x = self.fc2(x)
+        x = self.resid_dropout(x)
+        return x

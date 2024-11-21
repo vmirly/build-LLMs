@@ -120,10 +120,10 @@ class TransformerBlock(nn.Module):
     """
     def __init__(self, config):
         super().__init__()
-        self.ln1 = nn.LayerNorm(config.embed_dim)
         self.mha = CausalSelfAttention(config)
-        self.ln2 = nn.LayerNorm(config.embed_dim)
         self.ffn = FeedForwardNetwork(config)
+        self.ln1 = nn.LayerNorm(config.embed_dim)
+        self.ln2 = nn.LayerNorm(config.embed_dim)
 
         #self.resid_dropout = nn.Dropout(config.resid_dropout)
 
