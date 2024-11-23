@@ -125,3 +125,32 @@ class ViTEncoder(nn.Module):
         for layer in self.layers:
             x = layer(x)
         return x
+
+# vit embedding:
+# signature from HF
+# ViTEmbeddings(
+#  (patch_embeddings): PatchEmbeddings(
+#    (projection): Conv2d(3, 768, kernel_size=(16, 16), stride=(16, 16))
+#  )
+#  (dropout): Dropout(p=0.0, inplace=False)
+#)
+class ViTEmbeddings(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+
+        self.patch_embeddings = nn.Conv2d(
+            in_channels=3, out_channels=cfg.embed_dim,
+            kernel_size=cfg.patch_size, stride=cfg.patch_size
+        )
+        self.cls_token = nn.Parameter(torch.randn(1, 1, cfg.embed_dim))
+        self.pos_embeddings = nn.Parameter(torch.randn(1, cfg.max_len, cfg.embed_dim))
+        self.dropout = nn.Dropout(cfg.p_drop)
+
+    def forward(self, x):
+        B = x.size
+        x = self.patch_embeddings(x)
+        x = x.flatten(2).transpose(1, 2)
+        x = torch.cat([self.cls_token.expand(B, -1, -1), x], dim=1)
+        x = x + self.pos_embeddings
+        x = self.dropout(x)
+        return x
