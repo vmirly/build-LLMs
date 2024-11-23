@@ -44,7 +44,6 @@ class MSA(nn.Module):
             q, k, v, is_causal=True,
             dropout_p=self.p_drop
         )
-        out = self.attn_dropout(out)
 
         # Concatenate the heads and apply a linear transformation
         out = out.transpose(1, 2).contiguous().view(B, T, C)
@@ -138,19 +137,23 @@ class ViTEmbeddings(nn.Module):
     def __init__(self, cfg):
         super().__init__()
 
+        seq_len = 1 + (cfg.img_size // cfg.patch_size) ** 2
         self.patch_embeddings = nn.Conv2d(
             in_channels=3, out_channels=cfg.embed_dim,
             kernel_size=cfg.patch_size, stride=cfg.patch_size
         )
         self.cls_token = nn.Parameter(torch.randn(1, 1, cfg.embed_dim))
-        self.pos_embeddings = nn.Parameter(torch.randn(1, cfg.max_len, cfg.embed_dim))
+        print(self.cls_token.shape)
+        self.pos_embeddings = nn.Parameter(torch.randn(1, seq_len, cfg.embed_dim))
         self.dropout = nn.Dropout(cfg.p_drop)
 
     def forward(self, x):
-        B = x.size
-        x = self.patch_embeddings(x)
-        x = x.flatten(2).transpose(1, 2)
+        B = x.size()[0]
+        x = self.patch_embeddings(x)  # [B, C, H, W]
+        x = x.flatten(2).transpose(1, 2)  # [B, T, C]
         x = torch.cat([self.cls_token.expand(B, -1, -1), x], dim=1)
+        print("x shape", x.shape)
+        print("pos shape", self.pos_embeddings.shape)
         x = x + self.pos_embeddings
         x = self.dropout(x)
         return x
