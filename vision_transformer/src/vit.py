@@ -157,3 +157,24 @@ class ViTEmbeddings(nn.Module):
         x = x + self.pos_embeddings
         x = self.dropout(x)
         return x
+    
+# signature from HF:
+# ViTModel(
+#  (embeddings): ViTEmbeddings(...)
+#  (encoder): ViTEncoder(
+#    (layer): ModuleList(
+#      (0-11): ViTLayer(...)
+#    )
+#  )
+#)
+class ViTModel(nn.Module):
+    def __init__(self, cfg):
+        super().__init__()
+
+        self.embeddings = ViTEmbeddings(cfg)
+        self.encoder = ViTEncoder(cfg)
+
+    def forward(self, x):
+        x = self.embeddings(x)
+        x = self.encoder(x)
+        return x
